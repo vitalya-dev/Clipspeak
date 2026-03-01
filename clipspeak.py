@@ -91,20 +91,7 @@ if __name__ == "__main__":
 
 	# --- Commands ---
 	paste_cmd_args = ["wl-paste", "-p"]
-	rhvoice_cmd_args = ["RHVoice-test", "-p", "clb", "-r", "200", "-o", output_wav_file]
-
 	play_cmd_args = ["paplay", output_wav_file]
-
-	# --- Execution ---
-	active_commands = [
-		" ".join(shlex.quote(arg) for arg in paste_cmd_args),
-		" ".join(shlex.quote(arg) for arg in rhvoice_cmd_args)
-	]
-
-	active_commands.append(" ".join(shlex.quote(arg) for arg in play_cmd_args))
-
-	print("Running sequentially: " + " -> ".join(active_commands))
-	print("-" * 20)
 
 	try:
 		# 1. Run wl-paste
@@ -118,8 +105,7 @@ if __name__ == "__main__":
 			print("Clipboard is empty, nothing to speak.")
 			sys.exit(0)
 
-		# 2. Run RHVoice-test
-# 2. Generate Audio with Piper
+		# 2. Generate Audio with Piper
 		print("Sending text to Piper server...")
 		
 		# Упаковываем текст и настройки в JSON
