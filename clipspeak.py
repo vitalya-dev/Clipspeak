@@ -93,18 +93,6 @@ if __name__ == "__main__":
 	paste_cmd_args = ["wl-paste", "-p"]
 	rhvoice_cmd_args = ["RHVoice-test", "-p", "clb", "-r", "200", "-o", output_wav_file]
 
-	cmd_filter_base = ["sox", output_wav_file, temp_filtered_wav_file]
-	cmd_filter_effects = []
-	if HIGHPASS_FREQ:
-		cmd_filter_effects.extend(["highpass", HIGHPASS_FREQ])
-	if EQ_SETTINGS:
-		cmd_filter_effects.extend(EQ_SETTINGS)
-	if FADE_SETTINGS:
-		cmd_filter_effects.extend(FADE_SETTINGS)
-	if NORM_SETTINGS:
-		cmd_filter_effects.extend(NORM_SETTINGS)
-
-	cmd_filter_args = cmd_filter_base + cmd_filter_effects
 	play_cmd_args = ["paplay", output_wav_file]
 
 	# --- Execution ---
@@ -112,10 +100,7 @@ if __name__ == "__main__":
 		" ".join(shlex.quote(arg) for arg in paste_cmd_args),
 		" ".join(shlex.quote(arg) for arg in rhvoice_cmd_args)
 	]
-	if cmd_filter_effects:
-		active_commands.append("Filter ({})".format(" ".join(shlex.quote(arg) for arg in cmd_filter_args)))
-	else:
-		active_commands.append("Filter (skipped)")
+
 	active_commands.append(" ".join(shlex.quote(arg) for arg in play_cmd_args))
 
 	print("Running sequentially: " + " -> ".join(active_commands))
@@ -134,11 +119,27 @@ if __name__ == "__main__":
 			sys.exit(0)
 
 		# 2. Run RHVoice-test
-		print("Running RHVoice-test...")
-		subprocess.run(
-			rhvoice_cmd_args, input=clipboard_content, capture_output=True, text=True, check=True
+# 2. Generate Audio with Piper
+		print("Sending text to Piper server...")
+		
+		# Упаковываем текст и настройки в JSON
+		piper_payload = json.dumps({
+			"text": clipboard_content,
+			"length_scale": PIPER_LENGTH_SCALE
+		}).encode('utf-8')
+		
+		# Формируем и отправляем POST-запрос
+		req = urllib.request.Request(
+			PIPER_URL, 
+			data=piper_payload, 
+			headers={'Content-Type': 'application/json'}
 		)
-		print("RHVoice-test finished generating:", output_wav_file)
+		
+		# Получаем ответ и сразу записываем аудио в файл
+		with urllib.request.urlopen(req) as response, open(output_wav_file, 'wb') as out_file:
+			out_file.write(response.read())
+			
+		print("Piper finished generating:", output_wav_file)
 
 		# 3. Run SoX filter chain
 		if cmd_filter_effects:
