@@ -6,16 +6,17 @@ import os
 import shlex
 import signal
 
+import json            # Для создания JSON-структуры с текстом
+import urllib.request  # Для отправки POST-запроса на сервер Piper
+
+
 # --- SCRIPT CONFIGURATION ---
 # File Paths
 output_wav_file = os.path.expanduser("~/1.wav")
-temp_filtered_wav_file = os.path.expanduser("~/1_filtered.wav")
 
-# SoX Audio Effect Settings
-HIGHPASS_FREQ = "400"  # Set to "" or None to disable
-EQ_SETTINGS = []       # e.g., ["equalizer", "800", "2q", "-6"]
-FADE_SETTINGS = ["fade", "t", "0.01", "0", "0.01"] # Fade in/out to prevent clicks
-NORM_SETTINGS = []     # e.g., ["norm"]
+# Piper Settings
+PIPER_URL = "http://localhost:5001"
+PIPER_LENGTH_SCALE = 0.5  # Скорость чтения (из твоего примера с curl)
 
 # --- FUNCTIONS ---
 
