@@ -82,7 +82,7 @@ if __name__ == "__main__":
 
 	# --- Commands ---
 	paste_cmd_args = ["wl-paste", "-p"]
-	play_cmd_args = ["paplay", output_wav_file] # Используем paplay, как было в твоем скрипте
+	play_cmd_args = ["paplay", "--volume", "32768", output_wav_file] # Используем paplay, как было в твоем скрипте
 
 	# --- Execution ---
 	active_commands = [
