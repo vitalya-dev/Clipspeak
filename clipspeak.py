@@ -8,6 +8,7 @@ import signal
 import json
 import urllib.request
 import urllib.error
+import re  # Добавлен модуль для работы с регулярными выражениями
 
 # --- SCRIPT CONFIGURATION ---
 # File Paths
@@ -18,6 +19,25 @@ PIPER_URL = "http://localhost:5001"
 PIPER_LENGTH_SCALE = 0.5  # Скорость речи (меньше = быстрее)
 
 # --- FUNCTIONS ---
+
+def preprocess_text(text):
+	"""
+	Очищает текст от переносов слов, сносок (после точек) и форматирует пробелы.
+	"""
+	if not text:
+		return text
+
+	# 1. Убираем переносы слов: дефис, за которым следует перенос строки.
+	text = re.sub(r'-\s*\n\s*', '', text)
+
+	# 2. Заменяем все оставшиеся переносы строк и множественные пробелы на один пробел.
+	text = re.sub(r'\s+', ' ', text)
+
+	# 3. Убираем сноски: числа от 1 до 3 цифр, идущие после точки.
+	text = re.sub(r'(\.)\s*\d{1,3}\s*', r'\1 ', text)
+
+	# 4. Убираем лишние пробелы в начале и в конце текста.
+	return text.strip()
 
 def handle_error(e, context_message, exit_code=1):
 	"""
@@ -82,7 +102,7 @@ if __name__ == "__main__":
 
 	# --- Commands ---
 	paste_cmd_args = ["wl-paste", "-p"]
-	play_cmd_args = ["paplay", "--volume", "32768", output_wav_file] # Используем paplay, как было в твоем скрипте
+	play_cmd_args = ["paplay", "--volume", "32768", output_wav_file] 
 
 	# --- Execution ---
 	active_commands = [
@@ -101,9 +121,14 @@ if __name__ == "__main__":
 			paste_cmd_args, capture_output=True, text=True, check=True
 		)
 		print("wl-paste finished.")
-		clipboard_content = p1_result.stdout
-		if not clipboard_content.strip():
-			print("Clipboard is empty, nothing to speak.")
+		
+		# Обрабатываем полученный текст твоей функцией
+		raw_clipboard_content = p1_result.stdout
+		clipboard_content = preprocess_text(raw_clipboard_content)
+		
+		# Если после очистки текст оказался пустым, скрипт завершится
+		if not clipboard_content:
+			print("Clipboard is empty or contains only unreadable characters, nothing to speak.")
 			sys.exit(0)
 
 		# 2. Generate Audio with Piper
