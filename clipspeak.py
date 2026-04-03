@@ -61,3 +61,33 @@ def download_audio_worker(sentences, audio_queue):
 			
 	# Когда все предложения обработаны, кладем None как сигнал завершения
 	audio_queue.put(None)
+
+def play_audio_worker(audio_queue):
+	"""
+	Фоновый поток: забирает пути к аудиофайлам из очереди,
+	воспроизводит их и затем удаляет временные файлы.
+	"""
+	while True:
+		# Ждем появления следующего файла в очереди (функция замирает и ждет)
+		file_path = audio_queue.get()
+		
+		# Если получили None, значит генератор закончил работу и файлов больше не будет
+		if file_path is None:
+			break
+			
+		print(f"[Воспроизведение] Начинаем проигрывать файл...")
+		
+		try:
+			# Воспроизводим аудио
+			play_cmd_args = ["paplay", "--volume", "32768", file_path]
+			subprocess.run(
+				play_cmd_args, capture_output=True, text=True, check=True
+			)
+		except Exception as e:
+			print(f"[Ошибка воспроизведения] Не удалось проиграть файл: {e}", file=sys.stderr)
+		finally:
+			# Обязательно удаляем временный файл после воспроизведения (или ошибки)
+			try:
+				os.remove(file_path)
+			except OSError as e:
+				print(f"[Ошибка очистки] Не удалось удалить временный файл {file_path}: {e}", file=sys.stderr)
