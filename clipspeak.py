@@ -34,7 +34,7 @@ def clean_text(text):
 	cleaned = re.sub(r'-\s*\n\s*', '', text)
 	
 	# 2. Убираем цифры-сноски, идущие сразу после знаков конца предложения
-	cleaned = re.sub(r'(?<=[.!?])\d+', '', cleaned)
+	cleaned = re.sub(r'(?<=[.!?])\s*\d+', '', cleaned)
 	
 	# 3. Убираем обычные переносы строк, заменяя их на пробел, чтобы не рвать предложения
 	cleaned = re.sub(r'\s*\n\s*', ' ', cleaned)
@@ -216,6 +216,9 @@ if __name__ == "__main__":
 
 		# Очищаем текст от сносок и разрывов строк
 		clipboard_content = clean_text(clipboard_content)
+		
+		# Отправляем очищенный текст в системный журнал для отладки
+		subprocess.run(["logger", "-t", "clipspeak", f"Cleaned text: {clipboard_content}"], check=False)
 
 		# 2. Разбиваем текст на предложения
 		sentences = split_into_sentences(clipboard_content)
