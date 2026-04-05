@@ -214,6 +214,9 @@ if __name__ == "__main__":
 			print("Буфер обмена пуст, нечего озвучивать.")
 			sys.exit(0)
 
+		# Очищаем текст от сносок и разрывов строк
+		clipboard_content = clean_text(clipboard_content)
+
 		# 2. Разбиваем текст на предложения
 		sentences = split_into_sentences(clipboard_content)
 		print(f"Текст разбит на {len(sentences)} предложений(я). Начинаем потоковую обработку...")
