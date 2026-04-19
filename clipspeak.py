@@ -15,7 +15,11 @@ import logging
 
 # --- SCRIPT CONFIGURATION ---
 # Piper Settings
-PIPER_URL = "http://localhost:5001"
+# Укажи здесь URL/порты, на которых запущены разные голоса Piper
+PIPER_URLS = {
+    "ru": "http://localhost:5001",
+    "en": "http://localhost:5002"
+}
 PIPER_LENGTH_SCALE = 0.5  # Скорость речи (меньше = быстрее)
 
 # Настройка встроенного Python-логгера
