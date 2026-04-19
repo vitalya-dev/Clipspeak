@@ -17,8 +17,8 @@ import logging
 # Piper Settings
 # Укажи здесь URL/порты, на которых запущены разные голоса Piper
 PIPER_URLS = {
-    "ru": "http://localhost:5001",
-    "en": "http://localhost:5002"
+	"en": "http://localhost:5001",
+    "ru": "http://localhost:5002"
 }
 PIPER_LENGTH_SCALE = 0.5  # Скорость речи (меньше = быстрее)
 
@@ -248,20 +248,25 @@ if __name__ == "__main__":
 		# Очищаем текст от сносок и разрывов строк
 		clipboard_content = clean_text(clipboard_content)
 		
-		# ЗАМЕНА ЗДЕСЬ: Отправляем очищенный текст в питоновский логгер вместо системного
+		# Отправляем очищенный текст в питоновский логгер
 		logger.info(f"Cleaned text: {clipboard_content}")
 
-		# 2. Разбиваем текст на предложения
+		# 2. Определяем язык текста
+		language = detect_language(clipboard_content)
+		print(f"Определен язык: {language.upper()}")
+		logger.info(f"Detected language: {language}")
+
+		# 3. Разбиваем текст на предложения
 		sentences = split_into_sentences(clipboard_content)
 		print(f"Текст разбит на {len(sentences)} предложений(я). Начинаем потоковую обработку...")
 
-		# 3. Настраиваем очередь и запускаем параллельную работу
+		# 4. Настраиваем очередь и запускаем параллельную работу
 		audio_queue = queue.Queue()
 		
 		# Запускаем скачивание аудио в отдельном фоновом потоке
 		download_thread = threading.Thread(
 			target=download_audio_worker, 
-			args=(sentences, audio_queue)
+			args=(sentences, audio_queue, language) # Передаем язык сюда!
 		)
 		download_thread.start()
 		
