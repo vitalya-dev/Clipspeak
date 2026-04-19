@@ -74,6 +74,20 @@ def split_into_sentences(text):
 	
 	return cleaned_sentences
 
+def detect_language(text):
+	"""
+	Определяет язык текста на основе наличия кириллических символов.
+	Если в тексте есть русские буквы, возвращает 'ru', иначе 'en'.
+	"""
+	if not text:
+		return "en" # По умолчанию считаем текст английским
+
+	# Ищем хотя бы одну букву русского алфавита (включая Ё и ё)
+	if re.search(r'[А-Яа-яЁё]', text):
+		return "ru"
+	
+	return "en"
+
 
 def kill_other_instances_of_self():
 	"""
