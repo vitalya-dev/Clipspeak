@@ -3,7 +3,6 @@
 import subprocess
 import sys
 import os
-import shlex
 import signal
 import json
 import urllib.request
@@ -12,11 +11,21 @@ import threading
 import queue
 import tempfile
 import re
+import logging
 
 # --- SCRIPT CONFIGURATION ---
 # Piper Settings
 PIPER_URL = "http://localhost:5001"
 PIPER_LENGTH_SCALE = 0.5  # Скорость речи (меньше = быстрее)
+
+# Настройка встроенного Python-логгера
+# Уровень INFO означает, что будут записываться обычные информационные сообщения и ошибки.
+logging.basicConfig(
+    level=logging.INFO, 
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+# Создаем сам объект логгера с именем нашего приложения
+logger = logging.getLogger("clipspeak")
 
 
 def clean_text(text):
@@ -28,8 +37,6 @@ def clean_text(text):
 	"""
 	if not text:
 		return text
-
-	import re
 	
 	# 1. Убираем переносы с дефисом (дефис, перенос строки и возможные пробелы)
 	cleaned = re.sub(r'-\s*\n\s*', '', text)
@@ -55,7 +62,6 @@ def split_into_sentences(text):
 		
 	# Разделяем текст. (?<=[.!?]) означает "после знака препинания",
 	# а \s+ означает "один или несколько пробелов/переносов строк".
-	import re
 	sentences = re.split(r'(?<=[.!?])\s+', text.strip())
 	
 	# Очищаем каждое предложение от лишних пробелов по краям 
@@ -67,8 +73,8 @@ def split_into_sentences(text):
 
 def kill_other_instances_of_self():
 	"""
-	Finds and terminates other running instances of the current script
-	and their process groups (including children like paplay).
+	Ищет и завершает другие запущенные копии этого скрипта
+	и их группы процессов.
 	"""
 	current_pid = os.getpid()
 	script_name = os.path.basename(__file__)
@@ -112,7 +118,7 @@ def kill_other_instances_of_self():
 
 def handle_error(e, context_message, exit_code=1):
 	"""
-	Handles exceptions by printing a formatted error message and exiting.
+	Обрабатывает исключения, печатая отформатированное сообщение об ошибке, и завершает работу.
 	"""
 	print(f"\n--- SCRIPT ERROR ---", file=sys.stderr)
 	print(f"Context: {context_message}", file=sys.stderr)
@@ -219,8 +225,8 @@ if __name__ == "__main__":
 		# Очищаем текст от сносок и разрывов строк
 		clipboard_content = clean_text(clipboard_content)
 		
-		# Отправляем очищенный текст в системный журнал для отладки
-		subprocess.run(["logger", "-t", "clipspeak", f"Cleaned text: {clipboard_content}"], check=False)
+		# ЗАМЕНА ЗДЕСЬ: Отправляем очищенный текст в питоновский логгер вместо системного
+		logger.info(f"Cleaned text: {clipboard_content}")
 
 		# 2. Разбиваем текст на предложения
 		sentences = split_into_sentences(clipboard_content)
