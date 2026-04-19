@@ -146,16 +146,21 @@ def handle_error(e, context_message, exit_code=1):
 	sys.exit(exit_code)
 
 
-def download_audio_worker(sentences, audio_queue):
+def download_audio_worker(sentences, audio_queue, language):
 	"""
 	Фоновый поток: запрашивает аудио для каждого предложения у Piper,
 	сохраняет во временные файлы и помещает пути к ним в очередь.
+	Теперь учитывает выбранный язык для отправки запроса на нужный URL.
 	"""
+	# Определяем нужный URL на основе языка. 
+	# Если язык по какой-то причине не найден, безопасно откатываемся на английский ('en')
+	piper_url = PIPER_URLS.get(language, PIPER_URLS["en"])
+
 	for text in sentences:
 		if not text.strip():
 			continue
 			
-		print(f"[Скачивание] Подготавливаем аудио для: {text}")
+		print(f"[Скачивание] Подготавливаем аудио ({language}) для: {text}")
 		
 		try:
 			# Подготавливаем данные для Piper
@@ -165,7 +170,7 @@ def download_audio_worker(sentences, audio_queue):
 			}).encode('utf-8')
 			
 			req = urllib.request.Request(
-				PIPER_URL, 
+				piper_url, 
 				data=piper_payload, 
 				headers={'Content-Type': 'application/json'}
 			)
