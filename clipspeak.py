@@ -251,6 +251,13 @@ if __name__ == "__main__":
 		# Отправляем очищенный текст в питоновский логгер
 		logger.info(f"Cleaned text: {clipboard_content}")
 
+		print("Копируем очищенный текст обратно в буфер...")
+		try:
+			subprocess.run(["wl-copy"], input=clipboard_content, text=True, check=True)
+			print("Текст успешно закинут в буфер обмена.")
+		except Exception as e:
+			print(f"[Ошибка] Не удалось скопировать текст в буфер: {e}", file=sys.stderr)
+
 		# 2. Определяем язык текста
 		language = detect_language(clipboard_content)
 		print(f"Определен язык: {language.upper()}")
