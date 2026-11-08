@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/home/vitalya/Projects/Clipspeak/.venv/bin/python
 
 import subprocess
 import sys
@@ -13,6 +13,20 @@ import tempfile
 import re
 import logging
 
+# --- OPTIONAL DEPENDENCIES ---
+# ftfy  - чинит mojibake/лигатуры/кавычки (частые проблемы текста из PDF)
+# pysbd - умная разбивка на предложения (знает про Dr., e.g., Fig. 3 и т.п.)
+# Если библиотеки не установлены, скрипт работает на запасном regex-режиме.
+try:
+    import ftfy
+except ImportError:
+    ftfy = None
+
+try:
+    import pysbd
+except ImportError:
+    pysbd = None
+
 # --- SCRIPT CONFIGURATION ---
 # Piper Settings
 # Укажи здесь URL/порты, на которых запущены разные голоса Piper
@@ -20,7 +34,7 @@ PIPER_URLS = {
 	"en": "http://localhost:5001",
     "ru": "http://localhost:5002"
 }
-PIPER_LENGTH_SCALE = 0.8  # Скорость речи (меньше = быстрее)
+PIPER_LENGTH_SCALE = 0.5  # Скорость речи (меньше = быстрее)
 
 # Настройка встроенного Python-логгера
 # Уровень INFO означает, что будут записываться обычные информационные сообщения и ошибки.
@@ -32,60 +46,126 @@ logging.basicConfig(
 logger = logging.getLogger("clipspeak")
 
 
+# Строки, состоящие только из номера страницы / декоративных символов
+PAGE_NUMBER_RE = re.compile(r'^[\s\-–—_·•|.]*\d{1,4}[\s\-–—_·•|.]*$')
+# Суперскриптовые цифры (сноски в PDF)
+SUPERSCRIPT_DIGITS = '\u00b9\u00b2\u00b3\u2070\u2074-\u2079'
+# Мягкий перенос
+SOFT_HYPHEN = '\u00ad'
+# Невидимые юникод-пробелы
+EXOTIC_SPACES = '\u00a0\u1680\u2000-\u200b\u202f\u205f\u3000'
+# Что ставить вместо переноса слова с дефисом: "" - склеить ("simper-\ning" -> "simpering"),
+# " " - разделить ("сложно-\nсделать" -> "сложно сделать")
+HYPHEN_JOIN = ''
+
+
 def clean_text(text):
 	"""
-	Очищает текст от мусора, мешающего разбивке на предложения:
-	1. Убирает переносы слов с дефисом (напр. "simper-\n ing" -> "simpering").
-	2. Убирает сноски в виде цифр после знаков препинания и кавычек (напр. "word.53" -> "word.", "word.’5" -> "word.’").
-	3. Заменяет переносы строк на пробелы.
+	Очищает текст (в основном из PDF) перед разбивкой на предложения:
+	1. ftfy: чинит mojibake ("Ã‰cole" -> "École"), лигатуры ("ﬁrst" -> "first"),
+	   кривые кавычки и управляющие символы.
+	2. Убирает мягкий перенос и невидимые пробелы.
+	3. Удаляет колонтитулы: строки-номера страниц и повторяющиеся короткие строки.
+	4. Склеивает разорванные дефисом слова ("simper-\ning" -> "simpering"),
+	   но только если после переноса идёт строчная буква (настоящие дефисы не трогаем).
+	5. Убирает сноски-цифры ("word.53" -> "word."), не задевая десятичные числа ("3.14").
+	6. Схлопывает все пробелы и переводы строк.
 	"""
 	if not text:
 		return text
-	
-	# 1. Убираем переносы с дефисом (дефис, перенос строки и возможные пробелы)
-	cleaned = re.sub(r'-\s*\n\s*', '', text)
-	
-	# 2. Убираем цифры-сноски, идущие сразу после знаков конца предложения (и возможных кавычек)
-	# Мы "захватываем" знак препинания и кавычку в группу r'\1', и оставляем только её, удаляя цифры
-	cleaned = re.sub(r'([.!?][\'"”’ ]?)\d+', r'\1', cleaned)
-	
-	# 3. Убираем обычные переносы строк, заменяя их на пробел, чтобы не рвать предложения
+
+	# 1. Починка кодировки и юникода (если ftfy установлен)
+	if ftfy is not None:
+		cleaned = ftfy.fix_text(text)
+	else:
+		cleaned = text
+
+	# 2. Мягкий перенос -> пусто, невидимые пробелы -> обычный пробел
+	cleaned = cleaned.replace(SOFT_HYPHEN, '')
+	cleaned = re.sub('[' + EXOTIC_SPACES + ']', ' ', cleaned)
+
+	# 2b. Удаляем прочие управляющие символы (кроме переводов строк)
+	cleaned = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', cleaned)
+
+	# 3. Работаем построчно: выкидываем номера страниц и повторяющиеся колонтитулы
+	lines = [ln.strip() for ln in cleaned.split('\n')]
+	lines = [ln for ln in lines if ln and not PAGE_NUMBER_RE.match(ln)]
+
+	# Часто повторяющаяся короткая строка = колонтитул (верхний/нижний)
+	counts = {}
+	for ln in lines:
+		counts[ln] = counts.get(ln, 0) + 1
+	lines = [ln for ln in lines if not (len(ln) <= 60 and counts[ln] >= 3)]
+	cleaned = '\n'.join(lines)
+
+	# 4. Склейка слов, разорванных дефисом в конце строки
+	#    (дефис + перевод строки + строчная буква -> просто склеиваем)
+	cleaned = re.sub(r'(?<=[A-Za-z\u0400-\u04FF])[-\u2010\u2011]\s*\n\s*(?=[a-z\u0430-\u044f])', HYPHEN_JOIN, cleaned)
+
+	# 5. Сноски: цифры, прилипшие к знаку конца предложения ("word.53" -> "word.")
+	#    Lookbehind не даёт сожрать десятичную точку: в "3.14" перед точкой стоит цифра.
+	cleaned = re.sub(r'(?<![0-9])([.!?])[0-9]{1,4}(?=[\s,;:)\]\u201d\u2019"]|$)', r'\1', cleaned)
+	#    Суперскриптовые сноски (¹ ² ³ ...) убираем целиком
+	cleaned = re.sub('[' + SUPERSCRIPT_DIGITS + ']', '', cleaned)
+
+	# 6. Схлопываем пробелы и переводы строк в одиночный пробел
+	cleaned = re.sub(r'[ \t]+', ' ', cleaned)
 	cleaned = re.sub(r'\s*\n\s*', ' ', cleaned)
-	
+	cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+
 	return cleaned
 
 
-def split_into_sentences(text):
+def split_into_sentences(text, language="en"):
 	"""
 	Разбивает переданный текст на список отдельных предложений.
-	Использует регулярные выражения для поиска концов предложений (. ! ?).
+	Если доступен pysbd - используем его (понимает сокращения: Dr., e.g., Fig. 3 и т.п.).
+	Иначе - запасная разбивка регулярным выражением.
 	"""
 	# Если текст пустой, возвращаем пустой список
 	if not text or not text.strip():
 		return []
-		
-	# Разделяем текст. (?<=[.!?]) означает "после знака препинания",
-	# а \s+ означает "один или несколько пробелов/переносов строк".
-	sentences = re.split(r'(?<=[.!?])\s+', text.strip())
-	
-	# Очищаем каждое предложение от лишних пробелов по краям 
+
+	parts = None
+
+	if pysbd is not None:
+		try:
+			lang = language if language in ("en", "ru") else "en"
+			segmenter = pysbd.Segmenter(language=lang)
+			parts = segmenter.segment(text)
+		except Exception as e:
+			logger.warning(f"Не удалось разбить текст через pysbd, используем regex: {e}")
+			parts = None
+
+	if parts is None:
+		# Запасной вариант: разделение после . ! ? и пробельных символов
+		parts = re.split(r'(?<=[.!?])\s+', text.strip())
+
+	# Очищаем каждое предложение от лишних пробелов по краям
 	# и убираем пустые элементы, если они вдруг появились
-	cleaned_sentences = [s.strip() for s in sentences if s.strip()]
-	
+	cleaned_sentences = [s.strip() for s in parts if s and s.strip()]
+
 	return cleaned_sentences
+
 
 def detect_language(text):
 	"""
-	Определяет язык текста на основе наличия кириллических символов.
-	Если в тексте есть русские буквы, возвращает 'ru', иначе 'en'.
+	Определяет язык текста по доле кириллических букв.
+	Если кириллицы заметная часть - возвращаем 'ru', иначе 'en'.
+	Так одна случайная русская цитата не переключит весь текст на русский голос.
 	"""
 	if not text:
 		return "en" # По умолчанию считаем текст английским
 
-	# Ищем хотя бы одну букву русского алфавита (включая Ё и ё)
-	if re.search(r'[А-Яа-яЁё]', text):
+	cyrillic = len(re.findall(r'[А-Яа-яЁё]', text))
+	letters = len(re.findall(r'[A-Za-zА-Яа-яЁё]', text))
+
+	if letters == 0:
+		return "en"
+
+	if cyrillic / letters > 0.2:
 		return "ru"
-	
+
 	return "en"
 
 
@@ -247,6 +327,11 @@ if __name__ == "__main__":
 
 		# Очищаем текст от сносок и разрывов строк
 		clipboard_content = clean_text(clipboard_content)
+
+		if ftfy is None or pysbd is None:
+			missing = [name for name, mod in (("ftfy", ftfy), ("pysbd", pysbd)) if mod is None]
+			print(f"[Предупреждение] Не установлены: {', '.join(missing)}. "
+				  f"Качество очистки и разбивки будет ниже.", file=sys.stderr)
 		
 		# Отправляем очищенный текст в питоновский логгер
 		logger.info(f"Cleaned text: {clipboard_content}")
@@ -263,8 +348,8 @@ if __name__ == "__main__":
 		print(f"Определен язык: {language.upper()}")
 		logger.info(f"Detected language: {language}")
 
-		# 3. Разбиваем текст на предложения
-		sentences = split_into_sentences(clipboard_content)
+		# 3. Разбиваем текст на предложения (с учётом языка)
+		sentences = split_into_sentences(clipboard_content, language)
 		print(f"Текст разбит на {len(sentences)} предложений(я). Начинаем потоковую обработку...")
 
 		# 4. Настраиваем очередь и запускаем параллельную работу
