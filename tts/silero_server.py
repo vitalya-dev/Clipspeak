@@ -11,10 +11,14 @@ length_scale трактуется как у Piper: 0.5 = в два раза бы
 1.0 = обычная скорость, 2.0 = в два раза медленнее. Темп меняется
 через ffmpeg atempo, поэтому высота голоса не меняется.
 
+Перед синтезом текст проходит нормализацию (tts/textnorm.py): цифры и
+связанные символы заменяются словами, потому что токенсет моделей Silero
+не содержит цифр и `apply_tts` их вырезает.
+
 Примеры запуска (см. systemd/*.service.in):
 
-    silero_server.py --model models/v5_6_ru.pt --speaker aidar --port 5002
-    silero_server.py --model models/v3_en.pt  --speaker en_0  --port 5001
+    silero_server.py --model models/v5_6_ru.pt --speaker aidar --port 5002 --lang ru
+    silero_server.py --model models/v3_en.pt  --speaker en_0  --port 5001 --lang en
 """
 
 import argparse
@@ -30,6 +34,8 @@ from pathlib import Path
 import numpy as np
 import torch
 
+from textnorm import normalize
+
 logger = logging.getLogger("silero-server")
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -39,6 +45,7 @@ MODEL = None
 MODEL_LOCK = threading.Lock()
 DEFAULT_SPEAKER = "aidar"
 SAMPLE_RATE = 48000
+LANG = "ru"
 
 
 def resolve_path(path: str) -> Path:
@@ -113,10 +120,19 @@ def synthesize(text: str, speaker: str, length_scale: float) -> bytes:
         logger.warning("Неизвестный голос %r, используем %r", speaker, DEFAULT_SPEAKER)
         speaker = DEFAULT_SPEAKER
 
+    try:
+        normalized = normalize(text, LANG)
+    except Exception:
+        # Нормализация не должна ломать озвучку — в худшем случае читаем как есть.
+        logger.exception("Ошибка нормализации, читаем исходный текст")
+        normalized = text
+    if normalized != text:
+        logger.debug("Нормализация: %r -> %r", text, normalized)
+
     # apply_tts не потокобезопасен — синтезируем по одному запросу за раз.
     with MODEL_LOCK:
         audio = MODEL.apply_tts(
-            text=text,
+            text=normalized,
             speaker=speaker,
             sample_rate=SAMPLE_RATE,
         )
@@ -143,6 +159,7 @@ class Handler(BaseHTTPRequestHandler):
             "speakers": MODEL.speakers,
             "default_speaker": DEFAULT_SPEAKER,
             "sample_rate": SAMPLE_RATE,
+            "lang": LANG,
         })
 
     def do_POST(self):
@@ -181,7 +198,7 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main():
-    global MODEL, DEFAULT_SPEAKER, SAMPLE_RATE
+    global MODEL, DEFAULT_SPEAKER, SAMPLE_RATE, LANG
 
     parser = argparse.ArgumentParser(description="Silero TTS HTTP server")
     parser.add_argument("--host", default="127.0.0.1")
@@ -189,6 +206,8 @@ def main():
     parser.add_argument("--model", default="models/v5_6_ru.pt",
                         help="путь к .pt (относительно tts/)")
     parser.add_argument("--speaker", default=DEFAULT_SPEAKER)
+    parser.add_argument("--lang", choices=("ru", "en"), default="ru",
+                        help="язык текста для нормализации чисел")
     parser.add_argument("--sample-rate", type=int, default=SAMPLE_RATE)
     parser.add_argument("--threads", type=int, default=4,
                         help="torch.set_num_threads")
@@ -202,6 +221,7 @@ def main():
 
     DEFAULT_SPEAKER = args.speaker
     SAMPLE_RATE = args.sample_rate
+    LANG = args.lang
     torch.set_num_threads(args.threads)
 
     MODEL = load_model(resolve_path(args.model))

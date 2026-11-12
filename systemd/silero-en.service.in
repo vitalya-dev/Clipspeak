@@ -6,7 +6,7 @@ After=network.target
 Type=simple
 # Шаблон: systemd/silero-en.service.in
 # Пути, голос и число потоков подставляет scripts/install.sh
-ExecStart=@REPO@/tts/.venv/bin/python @REPO@/tts/silero_server.py --model @REPO@/tts/models/v3_en.pt --speaker @SPEAKER@ --port 5001 --threads @THREADS@
+ExecStart=@REPO@/tts/.venv/bin/python @REPO@/tts/silero_server.py --model @REPO@/tts/models/v3_en.pt --speaker @SPEAKER@ --port 5001 --lang @LANG@ --threads @THREADS@
 WorkingDirectory=@REPO@/tts
 Restart=on-failure
 RestartSec=2

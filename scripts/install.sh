@@ -100,16 +100,17 @@ log "Генерируем systemd-юниты в $UNIT_DIR"
 mkdir -p "$UNIT_DIR"
 
 render_unit() {
-    local template="$1" output="$2" speaker="$3"
+    local template="$1" output="$2" speaker="$3" lang="$4"
     sed -e "s|@REPO@|$REPO_DIR|g" \
         -e "s|@SPEAKER@|$speaker|g" \
+        -e "s|@LANG@|$lang|g" \
         -e "s|@THREADS@|$THREADS|g" \
         "$template" > "$UNIT_DIR/$output"
     ok "$output"
 }
 
-render_unit "$REPO_DIR/systemd/silero-en.service.in" "silero-en.service" "$EN_SPEAKER"
-render_unit "$REPO_DIR/systemd/silero-ru.service.in" "silero-ru.service" "$RU_SPEAKER"
+render_unit "$REPO_DIR/systemd/silero-en.service.in" "silero-en.service" "$EN_SPEAKER" "en"
+render_unit "$REPO_DIR/systemd/silero-ru.service.in" "silero-ru.service" "$RU_SPEAKER" "ru"
 
 systemctl --user daemon-reload
 

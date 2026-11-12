@@ -31,7 +31,8 @@ wl-paste ──> clean_text() ──> detect_language() ──> split_into_sente
 | 5001 | `silero-en.service` | `tts/models/v3_en.pt` (55 МБ) | `en_0` (всего 118 голосов `en_0`…`en_117`) |
 | 5002 | `silero-ru.service` | `tts/models/v5_6_ru.pt` (141 МБ) | `aidar` (`aidar`, `baya`, `kseniya`, `xenia`, `eugene`) |
 
-Оба сервиса — это один и тот же `tts/silero_server.py` с разными `--model` и `--speaker`.
+Оба сервиса — это один и тот же `tts/silero_server.py` с разными `--model`,
+`--speaker` и `--lang` (`en` для 5001, `ru` для 5002).
 
 ## Структура репозитория
 
@@ -43,16 +44,19 @@ Clipspeak/
 ├── .venv/                    # клиентский venv (gitignored)
 ├── tts/
 │   ├── silero_server.py      # HTTP-сервер Silero
-│   ├── requirements.txt      # torch, numpy
+│   ├── textnorm.py           # числа и символы -> слова перед синтезом
+│   ├── requirements.txt      # torch, numpy, num2words
 │   ├── .venv/                # TTS venv (gitignored)
 │   └── models/               # .pt модели (gitignored, качаются скриптом)
+├── tests/
+│   └── test_textnorm.py      # юнит-тесты нормализации (unittest)
 ├── systemd/
 │   ├── silero-en.service.in
 │   └── silero-ru.service.in
 └── scripts/
     ├── install.sh            # полный подъём с нуля
     ├── fetch-models.sh       # только модели (+sha256)
-    └── healthcheck.sh        # проверка сервисов и синтеза
+    └── healthcheck.sh        # проверка сервисов, синтеза и чисел
 ```
 
 ## Установка с нуля (свежий Arch Linux)
@@ -146,6 +150,54 @@ systemctl --user restart silero-ru
 curl -s http://127.0.0.1:5002/ | python3 -m json.tool
 ```
 
+## Числа и нормализация
+
+Токенсет моделей Silero **не содержит цифр** (а русский — ещё и латиницы):
+
+```
+v5_6_ru: _~|!+,-.:;?абвгдежзийклмнопрстуфхцчшщъыьэюяё–…
+v3_en:   _~| !"',-.:;?abcdefghijklmnopqrstuvwxyz
+```
+
+`apply_tts` вырезает всё, чего нет в наборе, поэтому без обработки
+«В 1984 году было 25 человек» звучит как «В году было человек», а «5%»
+превращается в пустую строку и даёт 500.
+
+Поэтому `tts/silero_server.py` перед синтезом вызывает
+`tts/textnorm.py:normalize(text, lang)` (язык задаётся флагом `--lang`).
+Что покрыто:
+
+| Что | Пример | Результат (ru) |
+|---|---|---|
+| целые, разделители тысяч | `1 000 000` | «один миллион» |
+| дроби | `3,14` | «три целых четырнадцать сотых» |
+| годы + падеж | `в 1984 году` | «в тысяча девятьсот восемьдесят четвёртом году» |
+| порядковые с суффиксом | `1-й`, `2-я` | «первый», «вторая» |
+| проценты с согласованием | `1%`, `2%`, `5%` | «один процент», «два процента», «пять процентов» |
+| диапазоны лет | `1990–1995` | «с … по …» (или «…–… годах») |
+| знак номера | `№ 5` | «номер пять» |
+| минус | `−5` | «минус пять» |
+
+Для английского — аналогично через `num2words` (`in nineteen eighty-four`,
+`three point one four`, `first`).
+
+Ограничения:
+
+* цифры, приклеенные к латинскому слову (`IPv6`), не трогаются;
+* валюты (`$`, `€`, `₽`), время `10:30` и длинные числа по цифрам пока не
+  обрабатываются;
+* латиница в русском голосе по-прежнему выпадает (отдельная задача).
+
+Тесты:
+
+```bash
+tts/.venv/bin/python -m unittest discover -s tests -v
+```
+
+`scripts/healthcheck.sh` дополнительно синтезирует фразу с цифрами и ту же
+фразу словами и сравнивает размер WAV — если числа снова начнут выпадать,
+проверка упадёт.
+
 ## Проверка и диагностика
 
 ```bash
@@ -189,6 +241,9 @@ ss -ltnp | grep -E ':500[12]'
 - Не коммитить `tts/models/*.pt`, `.venv/`, `tts/.venv/` — они в `.gitignore`.
 - Не менять `tts/silero_server.py` без проверки обоих языков: `./scripts/healthcheck.sh`.
 - После изменения `clipspeak.py` прогнать хотя бы один синтез на RU и EN.
+- После правок `tts/textnorm.py` прогнать
+  `tts/.venv/bin/python -m unittest discover -s tests -v` и
+  `./scripts/healthcheck.sh`.
 - Юниты в `~/.config/systemd/user/` генерируются из `systemd/*.service.in`;
   правки вносить в шаблоны, а не в сгенерированные файлы.
 - Скрипты должны оставаться идемпотентными и работать из любого каталога
