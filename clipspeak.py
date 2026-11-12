@@ -28,13 +28,13 @@ except ImportError:
     pysbd = None
 
 # --- SCRIPT CONFIGURATION ---
-# Piper Settings
-# Укажи здесь URL/порты, на которых запущены разные голоса Piper
-PIPER_URLS = {
+# TTS Settings
+# URL/порты локальных TTS-серверов (см. systemd/silero-*.service.in)
+TTS_URLS = {
 	"en": "http://localhost:5001",
     "ru": "http://localhost:5002"
 }
-PIPER_LENGTH_SCALE = 0.5  # Скорость речи (меньше = быстрее)
+TTS_LENGTH_SCALE = 0.5  # Скорость речи (меньше = быстрее)
 
 # Настройка встроенного Python-логгера
 # Уровень INFO означает, что будут записываться обычные информационные сообщения и ошибки.
@@ -169,10 +169,24 @@ def detect_language(text):
 	return "en"
 
 
+def _is_python_process(pid):
+	"""Проверяет, что PID — это интерпретатор Python, а не обёртка вроде timeout/bash."""
+	try:
+		exe = os.readlink(f"/proc/{pid}/exe")
+	except OSError:
+		return False
+	return "python" in os.path.basename(exe).lower()
+
+
 def kill_other_instances_of_self():
 	"""
 	Ищет и завершает другие запущенные копии этого скрипта
 	и их группы процессов.
+
+	pgrep -f ищет подстроку во всей командной строке, поэтому под шаблон
+	попадают и обёртки (timeout, bash -c), в аргументах которых есть имя
+	скрипта. Их трогать нельзя: убийство группы такой обёртки застрелит
+	и сам текущий процесс. Поэтому оставляем только реальные python-процессы.
 	"""
 	current_pid = os.getpid()
 	script_name = os.path.basename(__file__)
@@ -195,6 +209,9 @@ def kill_other_instances_of_self():
 			try:
 				pid = int(pid_str)
 				if pid == current_pid:
+					continue
+
+				if not _is_python_process(pid):
 					continue
 
 				print(f"  Found previous instance (PID: {pid}). Terminating its process group...")
@@ -228,13 +245,13 @@ def handle_error(e, context_message, exit_code=1):
 
 def download_audio_worker(sentences, audio_queue, language):
 	"""
-	Фоновый поток: запрашивает аудио для каждого предложения у Piper,
+	Фоновый поток: запрашивает аудио для каждого предложения у TTS-сервера,
 	сохраняет во временные файлы и помещает пути к ним в очередь.
 	Теперь учитывает выбранный язык для отправки запроса на нужный URL.
 	"""
 	# Определяем нужный URL на основе языка. 
 	# Если язык по какой-то причине не найден, безопасно откатываемся на английский ('en')
-	piper_url = PIPER_URLS.get(language, PIPER_URLS["en"])
+	tts_url = TTS_URLS.get(language, TTS_URLS["en"])
 
 	for text in sentences:
 		if not text.strip():
@@ -243,15 +260,15 @@ def download_audio_worker(sentences, audio_queue, language):
 		print(f"[Скачивание] Подготавливаем аудио ({language}) для: {text}")
 		
 		try:
-			# Подготавливаем данные для Piper
-			piper_payload = json.dumps({
+			# Подготавливаем данные для TTS-сервера
+			tts_payload = json.dumps({
 				"text": text,
-				"length_scale": PIPER_LENGTH_SCALE
+				"length_scale": TTS_LENGTH_SCALE
 			}).encode('utf-8')
 			
 			req = urllib.request.Request(
-				piper_url, 
-				data=piper_payload, 
+				tts_url, 
+				data=tts_payload, 
 				headers={'Content-Type': 'application/json'}
 			)
 			

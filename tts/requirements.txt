@@ -1,0 +1,6 @@
+# Зависимости TTS-сервера (для tts/.venv).
+
+# torch ставится отдельно с CPU-индекса (см. scripts/install.sh):
+#   pip install --index-url https://download.pytorch.org/whl/cpu torch
+torch>=2.0
+numpy>=1.23

@@ -1,0 +1,14 @@
+[Unit]
+Description=Silero TTS HTTP Server (Russian)
+After=network.target
+
+[Service]
+Type=simple
+# Плейсхолдеры @REPO@ / @SPEAKER@ / @THREADS@ подставляет scripts/install.sh
+ExecStart=@REPO@/tts/.venv/bin/python @REPO@/tts/silero_server.py --model @REPO@/tts/models/v5_6_ru.pt --speaker @SPEAKER@ --port 5002 --threads @THREADS@
+WorkingDirectory=@REPO@/tts
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=default.target
